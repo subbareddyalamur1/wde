@@ -74,6 +74,8 @@ windows_instance_type: "t2.micro"
 windows_ami: "ami-0d5d9d301c853a04a"
 windows_instance_volume_size: 50
 
+lb_access_logs_bucket_name: "sce-4.2.2.2-syc-syc12-staging-alb-logs"
+
 tags: {
   "Application": "WDE",
   "VpcId": "vpc-0b7257119a1b264a4",
