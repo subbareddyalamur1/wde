@@ -1,5 +1,6 @@
 # Variables
 SHELL := /bin/bash
+MY_IP := $(shell dig @resolver4.opendns.com myip.opendns.com +short -4)
 
 # Required parameters validation only for init
 ifneq ($(filter init,$(MAKECMDGOALS)),)
@@ -53,9 +54,14 @@ create-backend: copy-inputs
 
 # Initialize Terraform
 .PHONY: init
-init: copy-inputs create-backend
+init: clean copy-inputs create-backend
 	@echo "Initializing Terraform..."
-	terraform init
+	@if [ ! -f "inputs.yaml" ]; then \
+		echo "Error: inputs.yaml not found after copy. Something went wrong."; \
+		exit 1; \
+	fi
+	@sed -i '' "s/my_ip:.*/my_ip: \"$(MY_IP)\/32\"/" inputs.yaml
+	@terraform init
 
 # Plan changes
 .PHONY: plan

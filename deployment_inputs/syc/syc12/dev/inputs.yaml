@@ -70,11 +70,22 @@ server_config:
           protocol: all
           cidr: "0.0.0.0/0"
 
-windows_instance_type: "t2.micro"
-windows_ami: "ami-0d5d9d301c853a04a"
-windows_instance_volume_size: 50
+rds_config:
+  engine: aurora-postgresql
+  engine_version: 15.3
+  instance_class: db.serverless
+  database_name: guacamole # do not change
+  acu_min: 2
+  acu_max: 8
+  availability_zones:
+    - "us-east-1a"
+    - "us-east-1b"
+  rds_secret_name: "syc-syc12-dev-wde-1100-rds-creds" # create a secret in secrets manager if not exists with key value pair {username: "admin", password: "password"}
+
 
 lb_access_logs_bucket_name: "sce-4.2.2.2-syc-syc12-staging-alb-logs"
+
+my_ip: # leave blank as make init will update it.
 
 tags: {
   "Application": "WDE",
