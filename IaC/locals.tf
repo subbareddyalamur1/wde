@@ -63,5 +63,6 @@ locals {
     local.inputs["vpc_config"]["availability_zones"][az]["public_subnet_id"]
   ]
 
+  lb_access_logs_bucket_name = local.inputs["lb_access_logs_bucket_name"]
   tags = local.inputs["tags"]
 }

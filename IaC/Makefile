@@ -12,14 +12,10 @@ ifneq ($(filter init,$(MAKECMDGOALS)),)
   ifeq ($(CUSTOMER_ENV),)
     $(error CUSTOMER_ENV is required for init. Usage: make init CUSTOMER_NAME=<name> CUSTOMER_ORG=<org> CUSTOMER_ENV=<env>)
   endif
-  INPUT_FILE := ../deployment_inputs/$(CUSTOMER_NAME)/$(CUSTOMER_ORG)/$(CUSTOMER_ENV)/inputs.yaml
-else
-  # For other targets, get values from existing inputs.yaml if it exists
-  CUSTOMER_NAME := $(shell if [ -f inputs.yaml ]; then grep customer_name inputs.yaml | cut -d':' -f2 | tr -d ' '; fi)
-  CUSTOMER_ORG := $(shell if [ -f inputs.yaml ]; then grep customer_org inputs.yaml | cut -d':' -f2 | tr -d ' '; fi)
-  CUSTOMER_ENV := $(shell if [ -f inputs.yaml ]; then grep customer_env inputs.yaml | cut -d':' -f2 | tr -d ' '; fi)
-  INPUT_FILE := ../deployment_inputs/$(CUSTOMER_NAME)/$(CUSTOMER_ORG)/$(CUSTOMER_ENV)/inputs.yaml
 endif
+
+# Set input file path
+INPUT_FILE := ../deployment_inputs/$(CUSTOMER_NAME)/$(CUSTOMER_ORG)/$(CUSTOMER_ENV)/inputs.yaml
 
 # Default target
 .PHONY: all
@@ -29,20 +25,24 @@ all: plan apply
 .PHONY: copy-inputs
 copy-inputs:
 	@if [ ! -f inputs.yaml ]; then \
-		echo "Error: inputs.yaml not found. Please run 'make init' first with required parameters."; \
-		exit 1; \
+		echo "Copying inputs.yaml from $(INPUT_FILE)..."; \
+		if [ ! -f "$(INPUT_FILE)" ]; then \
+			echo "Error: Input file not found at $(INPUT_FILE)"; \
+			exit 1; \
+		fi; \
+		cp $(INPUT_FILE) .; \
+	else \
+		echo "inputs.yaml already exists. Skipping copy..."; \
 	fi
-	@echo "Copying inputs.yaml from $(INPUT_FILE)..."
-	@if [ ! -f "$(INPUT_FILE)" ]; then \
-		echo "Error: Input file not found at $(INPUT_FILE)"; \
-		exit 1; \
-	fi
-	@cp $(INPUT_FILE) .
 
 # Create backend.tf
 .PHONY: create-backend
 create-backend: copy-inputs
 	@echo "Creating backend.tf..."
+	@if [ ! -f inputs.yaml ]; then \
+		echo "Error: inputs.yaml not found after copy. Something went wrong."; \
+		exit 1; \
+	fi
 	@echo "terraform {" > backend.tf
 	@echo "  backend \"s3\" {" >> backend.tf
 	@echo "    bucket = \"$(shell grep tf_state_bucket_name inputs.yaml | cut -d':' -f2 | tr -d ' ')\"" >> backend.tf
@@ -53,17 +53,17 @@ create-backend: copy-inputs
 
 # Initialize Terraform
 .PHONY: init
-init: create-backend
+init: copy-inputs create-backend
 	@echo "Initializing Terraform..."
 	terraform init
 
-# Plan Terraform changes
+# Plan changes
 .PHONY: plan
 plan: copy-inputs
 	@echo "Planning Terraform changes..."
 	terraform plan
 
-# Apply Terraform changes
+# Apply changes
 .PHONY: apply
 apply: copy-inputs
 	@echo "Applying Terraform changes..."
@@ -75,13 +75,13 @@ plan-destroy: copy-inputs
 	@echo "Planning Terraform destroy..."
 	terraform plan -destroy
 
-# Destroy Terraform resources
+# Destroy infrastructure
 .PHONY: destroy
 destroy: copy-inputs
 	@echo "Destroying Terraform resources..."
 	terraform destroy -auto-approve
 
-# Clean up generated files
+# Clean up
 .PHONY: clean
 clean:
 	@echo "Cleaning up..."

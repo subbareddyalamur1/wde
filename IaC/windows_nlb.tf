@@ -8,6 +8,12 @@ resource "aws_lb" "windows_nlb" {
   enable_cross_zone_load_balancing = true
   enable_deletion_protection       = false
 
+  access_logs {
+    bucket  = local.lb_access_logs_bucket_name
+    prefix  = "access"
+    enabled = true
+  }
+
   tags = merge(local.tags, {
     Name = "${local.resource_name}-nlb"
   })
