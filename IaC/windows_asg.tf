@@ -47,7 +47,8 @@ data "aws_iam_policy_document" "windows_policy" {
       "cloudwatch:Get*",
       "cloudwatch:ListMetrics",
       "autoscaling:CompleteLifecycleAction",
-      "secretsmanager:GetSecretValue"
+      "secretsmanager:GetSecretValue",
+      "ec2:DescribeTags"
     ]
     resources = ["*"]
     effect    = "Allow"
