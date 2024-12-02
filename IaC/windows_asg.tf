@@ -165,6 +165,13 @@ resource "aws_autoscaling_group" "windows" {
   max_size = local.windows_asg_max_size
   desired_capacity = local.windows_asg_desired_capacity
 
+  termination_policies = ["Default"]
+  
+  instance_maintenance_policy {
+    min_healthy_percentage = 90
+    max_healthy_percentage = 110
+  }
+
   launch_template {
     id      = aws_launch_template.windows.id
     version = "$Latest"
@@ -179,7 +186,7 @@ resource "aws_autoscaling_group" "windows" {
 
   dynamic "tag" {
     for_each = merge(local.tags, {
-      Name = "${local.resource_name}-windows-#"
+      Name = "${local.resource_name}-windows"
     })
     content {
       key                 = tag.key
@@ -194,6 +201,19 @@ resource "aws_autoscaling_group" "windows" {
   }
 }
 
+# Lifecycle hook for termination
+resource "aws_autoscaling_lifecycle_hook" "termination_hook" {
+  depends_on              = [ aws_autoscaling_group.windows ]
+  name                    = "${local.resource_name}-termination-hook"
+  autoscaling_group_name  = aws_autoscaling_group.windows.name
+  lifecycle_transition    = "autoscaling:EC2_INSTANCE_TERMINATING"
+  default_result         = "ABANDON"
+  heartbeat_timeout      = 300  # 5 minutes timeout for connection draining
+  notification_metadata  = jsonencode({
+    "action" = "check_sessions"
+  })
+}
+
 # CPU Utilization Target Tracking Policy
 resource "aws_autoscaling_policy" "cpu_policy" {
   depends_on = [ aws_autoscaling_group.windows ]
@@ -206,7 +226,7 @@ resource "aws_autoscaling_policy" "cpu_policy" {
       predefined_metric_type = "ASGAverageCPUUtilization"
     }
     target_value = 75.0
-    disable_scale_in = true
+    disable_scale_in = false
   }
 }
 
@@ -230,28 +250,18 @@ resource "aws_autoscaling_policy" "memory_policy" {
   }
 }
 
-# Scale-in policy
+# Scale-in policy for low CPU utilization
 resource "aws_autoscaling_policy" "scale_in" {
   depends_on = [ aws_autoscaling_group.windows ]
   name                   = "${local.resource_name}-scale-in"
   autoscaling_group_name = aws_autoscaling_group.windows.name
   adjustment_type        = "ChangeInCapacity"
-  policy_type           = "SimpleScaling"
-  scaling_adjustment     = -1
-  cooldown              = 300
-}
-
-# Lifecycle hook for termination
-resource "aws_autoscaling_lifecycle_hook" "termination_hook" {
-  depends_on              = [ aws_autoscaling_group.windows ]
-  name                    = "${local.resource_name}-termination-hook"
-  autoscaling_group_name  = aws_autoscaling_group.windows.name
-  lifecycle_transition    = "autoscaling:EC2_INSTANCE_TERMINATING"
-  default_result         = "ABANDON"
-  heartbeat_timeout      = 300
-  notification_metadata  = jsonencode({
-    "action" = "check_sessions"
-  })
+  policy_type           = "StepScaling"
+  
+  step_adjustment {
+    scaling_adjustment          = -1
+    metric_interval_upper_bound = 0
+  }
 }
 
 # CloudWatch Alarm for Memory
@@ -267,6 +277,25 @@ resource "aws_cloudwatch_metric_alarm" "memory_alarm" {
   threshold          = 65
   alarm_description  = "Memory utilization above 65%"
   alarm_actions      = [aws_autoscaling_policy.memory_policy.arn]
+
+  dimensions = {
+    AutoScalingGroupName = aws_autoscaling_group.windows.name
+  }
+}
+
+# CloudWatch Alarm for Scale In
+resource "aws_cloudwatch_metric_alarm" "scale_in_alarm" {
+  depends_on          = [ aws_autoscaling_group.windows, aws_autoscaling_policy.scale_in ]
+  alarm_name          = "${local.resource_name}-scale-in-alarm"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = "3"  
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EC2"
+  period             = "300"  
+  statistic          = "Average"
+  threshold          = 30    
+  alarm_description  = "Scale in when CPU utilization is below 30% for 15 minutes"
+  alarm_actions      = [aws_autoscaling_policy.scale_in.arn]
 
   dimensions = {
     AutoScalingGroupName = aws_autoscaling_group.windows.name
