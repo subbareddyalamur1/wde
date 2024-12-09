@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  guacd:
+    image: ${guacd_image}:${guacd_version}
+    networks:
+      - guac_net
+    restart: always
+
+  guacamole:
+    image: ${guacamole_image}:${guacamole_version}
+    depends_on:
+      - guacd
+    networks:
+      - guac_net
+    environment:
+      GUACD_HOSTNAME: ${guacd_hostname}
+      POSTGRESQL_HOSTNAME: ${postgresql_hostname}
+      POSTGRESQL_PORT: ${postgresql_port}
+      POSTGRESQL_DATABASE: ${postgresql_database}
+      POSTGRESQL_USER: ${postgresql_username}
+      POSTGRESQL_PASSWORD: ${postgresql_password}
+    volumes:
+      - ${config_path}/guacamole.properties:/etc/guacamole/guacamole.properties
+    restart: always
+
+  guacws:
+    image: ${guacamole_image}:${guacamole_version}
+    depends_on:
+      - guacd
+    networks:
+      - guac_net
+    environment:
+      GUACD_HOSTNAME: ${guacd_hostname}
+      POSTGRESQL_HOSTNAME: ${postgresql_hostname}
+      POSTGRESQL_PORT: ${postgresql_port}
+      POSTGRESQL_DATABASE: ${postgresql_database}
+      POSTGRESQL_USER: ${postgresql_username}
+      POSTGRESQL_PASSWORD: ${postgresql_password}
+    volumes:
+      - ${config_path}/guacamole.properties:/etc/guacamole/guacamole.properties
+    restart: always
+
+  nginx:
+    image: ${nginx_image}:${nginx_version}
+    ports:
+      - "${nginx_port}:80"
+    depends_on:
+      - guacamole
+      - guacws
+    networks:
+      - guac_net
+    volumes:
+      - ${config_path}/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    restart: always
+
+networks:
+  guac_net:
+    driver: bridge

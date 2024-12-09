@@ -9,11 +9,6 @@ app_name: "wde"
 app_version: "1.1.0.0"
 aws_region: "us-east-1"
 
-ad_domain: "SYCAMORE.DEV.ORG"
-ad_workgroup: "SYCAMORE"
-ad_credentails_secret_arn: "arn:aws:secretsmanager:us-east-1:472598590798:secret:ADCredentials-HP2Y96"
-datadog_api_key_secret_arn: "arn:aws:secretsmanager:us-east-1:472598590798:secret:datadog-api-key-IAOXSn"
-
 vpc_config:
   vpc_id: "vpc-0b7257119a1b264a4"
   availability_zones:
@@ -141,7 +136,7 @@ rds_config:
 
 lb_access_logs_bucket_name: "sce-4.2.2.2-syc-syc12-staging-alb-logs"
 
-my_ip: # leave blank as make init will update it.
+my_ip: "49.207.204.238/32"
 
 tags: {
   "Application": "WDE",

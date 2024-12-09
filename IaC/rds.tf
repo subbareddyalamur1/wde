@@ -1,10 +1,14 @@
 locals {
-  rds_config = yamldecode(file("${path.module}/inputs.yaml")).rds_config
+  rds_monitoring_role_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/rds-monitoring-role"
   rds_creds = jsondecode(data.aws_secretsmanager_secret_version.rds_credentials.secret_string)
 }
 
 data "aws_secretsmanager_secret_version" "rds_credentials" {
   secret_id = local.rds_config.rds_secret_name
+}
+
+data "aws_iam_role" "monitoring_role" {
+  name = "rds-monitoring-role"
 }
 
 resource "aws_security_group" "rds_sg" {
@@ -50,28 +54,63 @@ resource "aws_rds_cluster" "aurora_cluster" {
   database_name         = local.rds_config.database_name
   master_username       = local.rds_creds.db_username
   master_password       = local.rds_creds.db_password
-  skip_final_snapshot   = true
-  
+
   serverlessv2_scaling_configuration {
     min_capacity = local.rds_config.acu_min
     max_capacity = local.rds_config.acu_max
   }
 
+  # performance
+  performance_insights_enabled = true
+  performance_insights_kms_key_id = aws_kms_key.kms_key.arn
+
+  iam_database_authentication_enabled = false
+  storage_encrypted = true
+  kms_key_id = aws_kms_key.kms_key.arn
+
   vpc_security_group_ids = [aws_security_group.rds_sg.id]
   db_subnet_group_name   = aws_db_subnet_group.aurora.id
+  port = 5432
+
+  # deletion
+  deletion_protection             = true
+  enabled_cloudwatch_logs_exports = []
+
+  # storage
+  storage_type = "aurora-iopt1"
+  # backup
+  backup_retention_period = 7
+  skip_final_snapshot     = true
+  copy_tags_to_snapshot   = true
 
   tags = merge(local.tags, {
     Name = "${local.resource_name}-psql"
   })
+
+  lifecycle {
+    ignore_changes = [
+      availability_zones,  # Ignore changes to availability zones
+      allocated_storage,   # Ignore allocated storage changes
+      apply_immediately    # Ignore immediate apply flag
+    ]
+  }
 }
 
 resource "aws_rds_cluster_instance" "aurora_instances" {
-  count               = 1
-  identifier          = "${local.resource_name}-aurora-cluster-${count.index + 1}"
+  count               = length(local.rds_config.availability_zones)
+  identifier          = "${local.resource_name}-cluster-${count.index + 1}"
   cluster_identifier  = aws_rds_cluster.aurora_cluster.id
   instance_class      = "db.serverless"  # Serverless v2 instance class
   engine              = aws_rds_cluster.aurora_cluster.engine
   engine_version      = aws_rds_cluster.aurora_cluster.engine_version
+
+  monitoring_interval = 60
+  monitoring_role_arn = local.rds_monitoring_role_arn
+
+  auto_minor_version_upgrade = false
+  
+  publicly_accessible = false
+  copy_tags_to_snapshot = true
 
   tags = merge(local.tags, {
     Name = "${local.resource_name}-aurora-cluster-${count.index + 1}"

@@ -1,8 +1,24 @@
 # # How to deploy/create new WDE infra
 
-### 1. Clone github repo
+# ## 0. Prerequisites
+### Create a aws secrets manager secret with the following details for rds creds
 ```
-git clone https://github.com/subbareddyalamur1/wde.git
+secret_name: "<customer_name>-<customer_org>-<customer_env>-<app_name>-<app_version>-rds-creds"
+{
+  "db_username": "admin",   # replace with your db username
+  "db_password": "password" # replace with your db password
+}
+```
+### Create a aws secrets manager secret with the following details for guacamole ldap creds
+```
+secret_name: "<customer_name>-<customer_org>-<customer_env>-<app_name>-<app_version>-guacamole-ldap-creds"
+{
+  "ldap_username": "admin",   # replace with your ldap username
+  "ldap_password": "password" # replace with your ldap password
+}
+```
+
+### 1. Clone github repo
 ```
 or
 ```

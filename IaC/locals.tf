@@ -11,6 +11,11 @@ locals {
   app_version = local.inputs["app_version"]
   aws_region = local.inputs["aws_region"]
 
+  ad_domain = local.inputs["ad_domain"]
+  ad_workgroup = local.inputs["ad_workgroup"]
+  ad_credentials_secret_arn = local.inputs["ad_credentials_secret_arn"]
+  datadog_api_key_secret_arn = local.inputs["datadog_api_key_secret_arn"]
+
   resource_name = replace("${local.customer_name}-${local.customer_org}-${local.customer_env}-${local.app_name}-${local.app_version}", ".", "")
 
   # VPC Configuration
@@ -25,6 +30,9 @@ locals {
     for az, config in local.inputs["vpc_config"]["availability_zones"]:
     config["public_subnet_id"]
   ]
+
+  # RDS Configuration
+  rds_config = yamldecode(file("${path.module}/inputs.yaml")).rds_config
   
   # Server Configuration
   guac_instance_type = local.inputs["server_config"]["guacamole"]["instance_type"]
