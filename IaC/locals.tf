@@ -60,6 +60,7 @@ locals {
   windows_asg_max_size = local.inputs["server_config"]["windows_server"]["asg_max_size"]
   windows_asg_desired_capacity = local.inputs["server_config"]["windows_server"]["asg_desired_capacity"]
   windows_asg_availability_zones = local.inputs["server_config"]["windows_server"]["availability_zones"]
+  asg_thresholds = local.inputs["windows_autoscaling_thresholds"]
 
   # Get Windows subnet IDs based on availability zones
   windows_private_subnet_ids = [

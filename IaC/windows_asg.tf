@@ -226,13 +226,13 @@ resource "aws_autoscaling_lifecycle_hook" "termination_hook" {
 }
 
 # RDP Connections Tracking Policy
-resource "aws_autoscaling_policy" "rdp_connections_policy" {
-  depends_on = [ aws_autoscaling_group.windows, aws_cloudwatch_metric_alarm.rdp_connections_alarm ]
+resource "aws_autoscaling_policy" "rdp_connections_policy_scale_out" {
+  depends_on = [ aws_autoscaling_group.windows ]
   name                   = "${local.resource_name}-rdp-connections-policy"
   autoscaling_group_name = aws_autoscaling_group.windows.name
   policy_type           = "StepScaling"
   adjustment_type       = "ChangeInCapacity"
-  estimated_instance_warmup = 300  # 5 minutes warmup
+  estimated_instance_warmup = 300
   
   step_adjustment {
     scaling_adjustment          = 1
@@ -246,27 +246,144 @@ resource "aws_autoscaling_policy" "rdp_connections_policy" {
   }
 }
 
+resource "aws_autoscaling_policy" "rdp_connections_policy_scale_in" {
+  depends_on = [ aws_autoscaling_group.windows ]
+  name                   = "${local.resource_name}-scale-in"
+  autoscaling_group_name = aws_autoscaling_group.windows.name
+  adjustment_type        = "ChangeInCapacity"
+  policy_type           = "StepScaling"
+  
+  step_adjustment {
+    scaling_adjustment          = -1
+    metric_interval_upper_bound = 0
+  } 
+}
+
 # CloudWatch Alarm for RDP Connections
-resource "aws_cloudwatch_metric_alarm" "rdp_connections_alarm" {
+resource "aws_cloudwatch_metric_alarm" "rdp_connections_high_alarm" {
   depends_on          = [ aws_autoscaling_group.windows ]
-  alarm_name          = "${local.resource_name}-rdp-connections-alarm"
+  alarm_name          = "${local.resource_name}-rdp-connections-high-alarm"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = "2"
   metric_name         = "ActiveSessions"  # Custom metric from ActiveUserWatcher.ps1
   namespace           = "Windows/RDP"
   period             = "300"
   statistic          = "Average"
-  threshold          = 30  # Scale when more than 30 active connections
-  alarm_description  = "Scale out when RDP connections exceed 30"
-  alarm_actions      = [aws_autoscaling_policy.rdp_connections_policy.arn]
+  threshold          = local.asg_thresholds.scale_out_rdp_users  # Scale when more than 30 active connections
+  alarm_actions      = [aws_autoscaling_policy.rdp_connections_policy_scale_out.arn]
 
   dimensions = {
     AutoScalingGroupName = aws_autoscaling_group.windows.name
   }
 }
 
-# Improved CPU Policy with more granular steps
-resource "aws_autoscaling_policy" "cpu_policy" {
+resource "aws_cloudwatch_metric_alarm" "rdp_connections_low_alarm" {
+  depends_on          = [ aws_autoscaling_group.windows ]
+  alarm_name          = "${local.resource_name}-rdp-connections-low-alarm"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "ActiveSessions"  # Custom metric from ActiveUserWatcher.ps1
+  namespace           = "Windows/RDP"
+  period             = "300"
+  statistic          = "Average"
+  threshold          = local.asg_thresholds.scale_in_rdp_users  # Scale in when less than 10 active connections
+  alarm_actions      = [aws_autoscaling_policy.rdp_connections_policy_scale_in.arn]
+
+  dimensions = {
+    AutoScalingGroupName = aws_autoscaling_group.windows.name
+  }
+}
+
+
+
+# Memory Scaling
+resource "aws_autoscaling_policy" "memory_policy_scale_in" {
+  depends_on = [ aws_autoscaling_group.windows ]
+  name                   = "${local.resource_name}-scale-in"
+  autoscaling_group_name = aws_autoscaling_group.windows.name
+  adjustment_type        = "ChangeInCapacity"
+  policy_type           = "StepScaling"
+  
+  step_adjustment {
+    scaling_adjustment          = -1
+    metric_interval_upper_bound = 0
+  } 
+  
+}
+
+resource "aws_autoscaling_policy" "memory_policy_scale_out" {
+  depends_on = [ aws_autoscaling_group.windows ]
+  name                   = "${local.resource_name}-memory-policy"
+  autoscaling_group_name = aws_autoscaling_group.windows.name
+  policy_type           = "StepScaling"
+  adjustment_type       = "ChangeInCapacity"
+  estimated_instance_warmup = 300
+  
+  step_adjustment {
+    scaling_adjustment          = 1
+    metric_interval_lower_bound = 0
+    metric_interval_upper_bound = 20  # 70-90% memory usage
+  }
+  
+  step_adjustment {
+    scaling_adjustment          = 2
+    metric_interval_lower_bound = 20  # >90% memory usage
+  }
+}
+
+# CloudWatch Alarm for Memory policy to trigger autoscaling
+resource "aws_cloudwatch_metric_alarm" "memory_high_alarm" {
+  depends_on = [ aws_autoscaling_group.windows ]
+  alarm_name          = "${local.resource_name}-memory-high-alarm"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "MemoryUtilization"
+  namespace           = "System/Windows"
+  period              = "120"
+  statistic           = "Average"
+  threshold           = local.asg_thresholds.scale_out_memory_usage
+
+  dimensions = {
+    AutoScalingGroupName = aws_autoscaling_group.windows.name
+  }
+
+  alarm_description = "This metric monitors Windows memory utilization"
+  alarm_actions     = [aws_autoscaling_policy.memory_policy_scale_out.arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "memory_low_alarm" {
+  depends_on = [ aws_autoscaling_group.windows ]
+  alarm_name          = "${local.resource_name}-memory-low-alarm"
+  comparison_operator = "LessThanOrEqualToThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "MemoryUtilization"
+  namespace           = "System/Windows"
+  period              = "120"
+  statistic           = "Average"
+  threshold           = local.asg_thresholds.scale_in_memory_usage
+
+  dimensions = {
+    AutoScalingGroupName = aws_autoscaling_group.windows.name
+  }
+
+  alarm_description = "This metric monitors Windows memory utilization"
+  alarm_actions     = [aws_autoscaling_policy.memory_policy_scale_in.arn]
+}
+
+# CPU Scaling
+resource "aws_autoscaling_policy" "cpu_policy_scale_in" {
+  depends_on = [ aws_autoscaling_group.windows ]
+  name                   = "${local.resource_name}-scale-in"
+  autoscaling_group_name = aws_autoscaling_group.windows.name
+  adjustment_type        = "ChangeInCapacity"
+  policy_type           = "StepScaling"
+  
+  step_adjustment {
+    scaling_adjustment          = -1
+    metric_interval_upper_bound = 0
+  }
+}
+resource "aws_autoscaling_policy" "cpu_policy_scale_out" {
   depends_on = [ aws_autoscaling_group.windows ]
   name                   = "${local.resource_name}-cpu-policy"
   autoscaling_group_name = aws_autoscaling_group.windows.name
@@ -285,57 +402,43 @@ resource "aws_autoscaling_policy" "cpu_policy" {
     metric_interval_lower_bound = 20  # >90% CPU
   }
 }
-
-# Enhanced Memory Policy with shorter evaluation
-resource "aws_cloudwatch_metric_alarm" "memory_alarm" {
-  depends_on          = [ aws_autoscaling_group.windows ]
-  alarm_name          = "${local.resource_name}-memory-alarm"
-  comparison_operator = "GreaterThanThreshold"
+# CloudWatch Alarm for CPU policy to trigger autoscaling
+resource "aws_cloudwatch_metric_alarm" "cpu_high_alarm" {
+  depends_on = [ aws_autoscaling_group.windows ]
+  alarm_name          = "${local.resource_name}-cpu-high-alarm"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
   evaluation_periods  = "2"
-  metric_name         = "Memory % Committed Bytes In Use"
-  namespace           = "CWAgent"
-  period             = "180"  # Reduced to 3 minutes
-  statistic          = "Average"
-  threshold          = 65
-  alarm_description  = "Memory utilization above 65%"
-  alarm_actions      = [aws_autoscaling_policy.memory_policy.arn]
-
-  dimensions = {
-    AutoScalingGroupName = aws_autoscaling_group.windows.name
-  }
-}
-
-# Improved Scale-in Policy with protection
-resource "aws_autoscaling_policy" "scale_in" {
-  depends_on = [ aws_autoscaling_group.windows, aws_cloudwatch_metric_alarm.scale_in_alarm ]
-  name                   = "${local.resource_name}-scale-in"
-  autoscaling_group_name = aws_autoscaling_group.windows.name
-  adjustment_type        = "ChangeInCapacity"
-  policy_type           = "StepScaling"
-  
-  step_adjustment {
-    scaling_adjustment          = -1
-    metric_interval_upper_bound = 0
-  }
-}
-
-# Enhanced Scale-in Alarm with longer evaluation
-resource "aws_cloudwatch_metric_alarm" "scale_in_alarm" {
-  depends_on          = [ aws_autoscaling_group.windows ]
-  alarm_name          = "${local.resource_name}-scale-in-alarm"
-  comparison_operator = "LessThanThreshold"
-  evaluation_periods  = "4"  # Increased to 4 periods
   metric_name         = "CPUUtilization"
   namespace           = "AWS/EC2"
-  period             = "300"
-  statistic          = "Average"
-  threshold          = 25    # Lowered to 25%
-  alarm_description  = "Scale in when CPU utilization is below 25% for 20 minutes"
-  alarm_actions      = [aws_autoscaling_policy.scale_in.arn]
+  period              = "120"
+  statistic           = "Average"
+  threshold           = local.asg_thresholds.scale_out_cpu_usage
 
   dimensions = {
     AutoScalingGroupName = aws_autoscaling_group.windows.name
   }
+
+  alarm_description = "This metric monitors EC2 CPU utilization"
+  alarm_actions     = [aws_autoscaling_policy.cpu_policy_scale_out.arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "cpu_low_alarm" {
+  depends_on = [ aws_autoscaling_group.windows ]
+  alarm_name          = "${local.resource_name}-cpu-low-alarm"
+  comparison_operator = "LessThanOrEqualToThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EC2"
+  period              = "120"
+  statistic           = "Average"
+  threshold           = "20"
+
+  dimensions = {
+    AutoScalingGroupName = aws_autoscaling_group.windows.name
+  }
+
+  alarm_description = "This metric monitors EC2 CPU utilization"
+  alarm_actions     = [aws_autoscaling_policy.cpu_policy_scale_in.arn]
 }
 
 # CloudWatch Event Rule

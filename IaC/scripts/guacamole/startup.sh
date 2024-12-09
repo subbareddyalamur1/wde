@@ -3,29 +3,30 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-declare -r LOG_FILE="/var/log/startup.log"
-declare -r SSM_AGENT_URL="https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm"
-declare -r AWS_CLI_URL="https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip"
-
-# Parameters passed from Terraform
-AD_WORKGROUP="${ad_workgroup}"
-AD_DOMAIN="${ad_domain}"
-AD_CREDENTAILS_SECRET_ARN="${ad_credentails_secret_arn}"
-DATADOG_API_KEY="${datadog_api_key}"
+# Environment and Customer Variables
 CUSTOMER_NAME="${customer_name}"
 CUSTOMER_ORG="${customer_org}"
 CUSTOMER_ENV="${customer_env}"
 APP_NAME="${app_name}"
+AD_WORKGROUP="${ad_workgroup}"
+AD_DOMAIN="${ad_domain}"
+DATADOG_API_KEY="${datadog_api_key}"
+
+declare -r SSM_AGENT_URL="https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm"
+declare -r AWS_CLI_URL="https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip"
+
+# Ensure log file exists
+LOG_FILE="/var/log/startup.log"
+sudo touch $LOG_FILE
+sudo chmod 666 $LOG_FILE
 
 handle_error() {
     echo "[ERROR] ${2} (Exit Code: ${1})" >&2
     exit "${1}"
 }
 log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ${1}" | tee -a "${LOG_FILE}"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ${1}" | tee -a $LOG_FILE
 }
-
-
 
 # Function to install Datadog Agent
 install_datadog_agent() {
@@ -46,7 +47,7 @@ install_datadog_agent() {
     # Update Datadog configuration
     log "Updating Datadog configuration..."
     cat > /etc/datadog-agent/datadog.yaml <<EOL
-api_key: $DD_API_KEY
+api_key: $DATADOG_API_KEY
 check_runners: 4
 cmd.check.fullsketches: false
 config_providers:
@@ -61,7 +62,7 @@ listeners:
 logs:
   enabled: true
 logs_config:
-  api_key: $DD_API_KEY
+  api_key: $DATADOG_API_KEY
   container_collect_all: true
 logs_enabled: true
 network:
@@ -292,32 +293,34 @@ setup_permissions() {
 
 set_hostname() {
     # Get the first letter of environment
-    local env_prefix="${CUSTOMER_ENV:0:1}"
+    local env_prefix=$(echo "$CUSTOMER_ENV" | cut -c1)
     
     # Get availability zone and its last letter
-    local az=$(curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone)
-    local az_suffix="${az: -1}"
+    local az=$(curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone | rev | cut -c1)
     
     # Convert customer org to lowercase and remove spaces
-    local org=$(echo "${CUSTOMER_ORG}" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
+    local org=$(echo "$CUSTOMER_ORG" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
     
     # Construct hostname
-    local hostname="${env_prefix}-guac-${org}-${az_suffix}"
+    local hostname="$env_prefix-guac-$org-$az"
+    
+    # Truncate hostname if it exceeds 15 characters (Windows NetBIOS name limit)
+    hostname=$(echo "$hostname" | cut -c1-15)
     
     # Set the hostname
-    hostnamectl set-hostname "${hostname}"
-    echo "${hostname}" > /etc/hostname
+    hostnamectl set-hostname "$hostname"
+    echo "$hostname" > /etc/hostname
     
     # Make hostname available immediately in current shell
-    export HOSTNAME="${hostname}"
-    hostname "${hostname}"
+    export HOSTNAME="$hostname"
+    hostname "$hostname"
     
-    log "Hostname set to: ${hostname}"
+    log "Hostname set to: $hostname"
     
     # Verify the change
     local current_hostname=$(hostname)
-    if [ "${current_hostname}" != "${hostname}" ]; then
-        handle_error 1 "Failed to set hostname. Expected: ${hostname}, Got: ${current_hostname}"
+    if [ "$current_hostname" != "$hostname" ]; then
+        handle_error 1 "Failed to set hostname. Expected: $hostname, Got: $current_hostname"
     fi
 }
 
@@ -328,14 +331,14 @@ install_packages() {
 setup_services() {
     local service=$1
     systemctl daemon-reload
-    systemctl enable "${service}"
-    systemctl restart "${service}" || handle_error $? "Failed to restart ${service}"
+    systemctl enable "$service"
+    systemctl restart "$service" || handle_error $? "Failed to restart $service"
 }
 
 install_aws_cli() {
     if ! command -v aws &>/dev/null; then
         log "Installing AWS CLI..."
-        curl "${AWS_CLI_URL}" -o "awscliv2.zip"
+        curl "$AWS_CLI_URL" -o "awscliv2.zip"
         unzip -q awscliv2.zip
         ./aws/install
     rm -rf aws awscliv2.zip
@@ -354,16 +357,13 @@ setup_docker() {
 }
 
 main() {
-    exec 1> >(tee -a "${LOG_FILE}")
-    exec 2> >(tee -a "${LOG_FILE}" >&2)
-    # Ensure log file exists
-    sudo touch $LOG_FILE
-    sudo chmod 666 $LOG_FILE
+    exec 1> >(tee -a "$LOG_FILE")
+    exec 2> >(tee -a "$LOG_FILE" >&2)
     log "Starting setup..."
     set_hostname
     yum update -y
     install_packages unzip
-    install_packages "${SSM_AGENT_URL}"
+    install_packages "$SSM_AGENT_URL"
     setup_services amazon-ssm-agent
     install_aws_cli
     install_datadog_agent
@@ -376,6 +376,7 @@ main() {
         glibc-headers glibc-devel yum-utils
     setup_services chronyd
     setup_docker
+    install_datadog_agent
     log "Setup completed successfully!"
 }
 

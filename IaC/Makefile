@@ -54,7 +54,7 @@ create-backend: copy-inputs
 
 # Initialize Terraform
 .PHONY: init
-init: clean copy-inputs create-backend
+init: copy-inputs create-backend
 	@echo "Initializing Terraform..."
 	@if [ ! -f "inputs.yaml" ]; then \
 		echo "Error: inputs.yaml not found after copy. Something went wrong."; \

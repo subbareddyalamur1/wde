@@ -52,6 +52,7 @@ function Install-Prerequisites {
         # install CloudWatch agent
         Invoke-WebRequest -Uri https://s3.amazonaws.com/amazoncloudwatch-agent/windows/amd64/latest/amazon-cloudwatch-agent.msi -OutFile C:\amazon-cloudwatch-agent.msi
         Start-Process -FilePath C:\amazon-cloudwatch-agent.msi -ArgumentList '/quiet' -Wait
+        Write-Log "CloudWatch agent installed successfully"
 
         # install AWS CLI if not already installed
         if (-not (Test-Path "C:\Program Files\Amazon\AWSCLIV2\aws.exe")) {
@@ -60,6 +61,14 @@ function Install-Prerequisites {
             Invoke-WebRequest -Uri "https://awscli.amazonaws.com/AWSCLIV2.msi" -OutFile $installerPath
             Start-Process -FilePath msiexec.exe -Args "/i $installerPath /quiet" -Wait
             Remove-Item $installerPath
+            Write-Log "AWS CLI installed successfully"
+        }
+
+        #install RSAT-AD-PowerShell if not already installed
+        if (-not (Get-WindowsFeature RSAT-AD-PowerShell)) {
+            Write-Log "Installing RSAT-AD-PowerShell..."
+            Install-WindowsFeature -Name RSAT-AD-PowerShell -IncludeManagementTools
+            Write-Log "RSAT-AD-PowerShell installed successfully"
         }
         Write-Log "Prerequisites installed successfully"
     }
@@ -136,8 +145,11 @@ function Set-LocalAdminPassword {
 function Set-WindowsHostname {
     param()
     try {
-        # Get instance ID from metadata service
-        $instanceId = (Invoke-WebRequest -Uri "http://169.254.169.254/latest/meta-data/instance-id" -UseBasicParsing).Content
+        # Get IMDSv2 token
+        $token = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token-ttl-seconds" = "21600"} -Method PUT -Uri "http://169.254.169.254/latest/api/token"
+        
+        # Get instance ID
+        $instanceId = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token" = $token} -Method GET -Uri "http://169.254.169.254/latest/meta-data/instance-id"  
         
         # Extract the last two characters from instance ID
         $instanceNumber = $instanceId.Substring($instanceId.Length - 2)
@@ -310,6 +322,16 @@ function UnJoin-ADDomainTask {
     )
     try {
         $scriptPath = "C:\Windows\System32\GroupPolicy\Machine\Scripts\Shutdown\Shutdown-UnJoin.ps1"
+        $scriptDirectory = Split-Path -Path $scriptPath -Parent
+        if (-not (Test-Path $scriptDirectory)) {
+            try {
+                New-Item -ItemType Directory -Force -Path $scriptDirectory | Out-Null
+            } catch {
+                Write-Log "Error creating directory: $_" -EventType "Error"
+                throw
+            }
+        }
+
         $scriptContent = @"
 # Domain unjoin script
 `$ErrorActionPreference = "Stop"
@@ -392,6 +414,16 @@ try {
     }
 }
 
+function Reboot-Computer {
+    try {
+        Write-Log "Rebooting computer..."
+        Restart-Computer -Force
+    } catch {
+        Write-Log "Error rebooting computer: $_" -EventType "Error"
+        throw
+    }
+}
+
 # Main execution block
 try {
     Install-Prerequisites
@@ -399,8 +431,9 @@ try {
     Set-LocalAdminPassword
     New-MetricsScript
     Register-MetricsTask
-    Join-ADDomain
     UnJoin-ADDomainTask -AD_CREDENTIALS_SECRET_ARN $AD_CREDENTAILS_SECRET_ARN
+    Join-ADDomain
+    Reboot-Computer
 } catch {
     Write-Log "Error occurred during user data execution: $_" -EventType "Error"
     throw
