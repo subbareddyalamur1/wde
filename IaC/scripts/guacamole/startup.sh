@@ -321,108 +321,6 @@ set_hostname() {
     fi
 }
 
-configure_samba() {
-    log "Configuring Samba..."
-    
-    # Install Samba packages
-    install_packages samba samba-client samba-common oddjob-mkhomedir oddjob samba-winbind-clients samba-winbind
-
-    # Create Samba config directory if it doesn't exist
-    if [ ! -d "/etc/samba" ]; then
-        mkdir -p /etc/samba
-        log "/etc/samba directory created."
-    else
-        log "/etc/samba directory already exists."
-    fi
-
-    # Backup existing Samba config
-    cp /etc/samba/smb.conf /etc/samba/smb-$(date -I).conf
-
-    # Create the smb.conf file with variables expanded
-    cat > /etc/samba/smb.conf << 'EOL'
-[global]
-allow insecure wide links = yes
-bind interfaces only = yes
-client ldap sasl wrapping = plain
-client ntlmv2 auth = yes
-client signing = yes
-client use spnego = yes
-dos filemode = yes
-enable core files = false
-interfaces = lo eth0
-kerberos method = secrets and keytab
-log file = /var/log/samba/log.%m
-log level = 9
-machine password timeout = 0
-map archive = no
-max log size = 50
-netbios name = GUACAMOLE_SERVE
-passdb backend = tdbsam
-security = ads
-server signing = auto
-server string = Samba Server Version %v
-store dos attributes = no
-template homedir = /home/%U
-template shell = /bin/bash
-unix extensions = no
-
-winbind cache time = 1800
-winbind enum groups = yes
-winbind enum users = yes
-winbind expand groups = 1
-winbind nested groups = yes
-winbind offline logon = yes
-winbind refresh tickets = yes
-winbind use default domain = yes
-
-idmap cache time = 0
-idmap config * : backend = tdb
-idmap config * : range = 10000-999999
-idmap config ${AD_WORKGROUP} : backend = rid
-idmap config ${AD_WORKGROUP} : range = 2000000-2999999
-idmap config ${AD_WORKGROUP} : unix_nss_info = yes
-idmap config ${AD_WORKGROUP} : unix_primary_group = yes
-
-workgroup = ${AD_WORKGROUP}
-realm = ${AD_DOMAIN}
-
-[homes]
-browseable = No
-comment = Home Directories
-inherit acls = Yes
-read only = No
-valid users = %S, %D%w%S
-
-[printers]
-browseable = No
-comment = All Printers
-create mask = 0600
-path = /var/tmp
-printable = Yes
-
-[print$]
-comment = Printer Drivers
-create mask = 0664
-directory mask = 0775
-force group = @printadmin
-path = /var/lib/samba/drivers
-write list = @printadmin root
-EOL
-
-    # Set proper permissions
-    chmod 644 /etc/samba/smb.conf
-    
-    # Create required directories
-    mkdir -p /var/log/samba
-    mkdir -p /var/lib/samba/drivers
-    
-    # Start and enable Samba services
-    setup_services smb
-    setup_services winbind
-    
-    log "Samba configuration completed"
-}
-
 install_packages() {
     yum install -y "$@" || handle_error $? "Failed to install packages: $*"
 }
@@ -453,26 +351,6 @@ setup_docker() {
     [ -S /var/run/docker.sock ] && chmod 666 /var/run/docker.sock
     groupadd -f docker
     usermod -aG docker ec2-user root
-}
-
-join_ad_domain() {
-    log "Fetching AD credentials from AWS Secrets Manager..."
-    # Fetch the domain user and password from AWS Secrets Manager
-    secret=$(aws secretsmanager get-secret-value --secret-id "$AD_CREDENTAILS_SECRET_ARN" --query SecretString --output text)
-    domain_user=$(echo $secret | jq -r '.UserID')
-    domain_password=$(echo $secret | jq -r '.Password')
-
-    log "Joining the Linux instance to the AD domain: $AD_DOMAIN"
-    # Join the domain
-    echo "$domain_password" | realm join --user="$domain_user" "$AD_DOMAIN"
-
-    # Verify the domain join
-    if realm list | grep -q "$AD_DOMAIN"; then
-        log "Successfully joined the domain: $AD_DOMAIN"
-    else
-        log "Failed to join the domain: $AD_DOMAIN"
-        exit 1
-    fi
 }
 
 main() {
@@ -507,10 +385,6 @@ main() {
         glibc-headers glibc-devel yum-utils
     
     setup_services chronyd
-
-    join_ad_domain
-
-    configure_samba
     
     setup_docker
     
