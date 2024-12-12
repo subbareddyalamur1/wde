@@ -49,7 +49,10 @@ data "aws_iam_policy_document" "windows_policy" {
       "cloudwatch:PutMetricData",
       "autoscaling:CompleteLifecycleAction",
       "secretsmanager:GetSecretValue",
-      "ec2:DescribeTags"
+      "ec2:DescribeTags",
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:ListBucket"
     ]
     resources = ["*"]
     effect    = "Allow"
@@ -95,6 +98,7 @@ resource "aws_iam_instance_profile" "windows_profile" {
 
 # Launch template for Windows instances
 resource "aws_launch_template" "windows" {
+  depends_on = [ aws_s3_object.scripts_zip ]
   name = "${local.resource_name}-windows-lt"
   description = "Launch template for Windows instances"
   
@@ -127,15 +131,17 @@ resource "aws_launch_template" "windows" {
     }
   }
 
-  user_data = base64encode(templatefile("${path.module}/scripts/windows/startup.ps1",
+  user_data = base64encode(templatefile("${path.module}/scripts/windows/bootstrap.ps1",
     {
       customer_name = local.customer_name
       customer_org  = local.customer_org
       customer_env  = local.customer_env
       app_name      = local.app_name
       domain       = local.ad_domain
-      ad_workgroup = local.ad_workgroup
-      ad_credentials_secret_arn = local.ad_credentials_secret_arn
+      workgroup    = local.workgroup
+      ad_credentials_secret = local.ad_credentials_secret
+      s3_bucket     = aws_s3_object.scripts_zip.bucket
+      s3_key        = aws_s3_object.scripts_zip.key
     }
   ))
 

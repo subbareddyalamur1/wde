@@ -8,7 +8,6 @@ CUSTOMER_NAME="${customer_name}"
 CUSTOMER_ORG="${customer_org}"
 CUSTOMER_ENV="${customer_env}"
 APP_NAME="${app_name}"
-AD_WORKGROUP="${ad_workgroup}"
 AD_DOMAIN="${ad_domain}"
 DATADOG_API_KEY="${datadog_api_key}"
 
@@ -25,7 +24,8 @@ handle_error() {
     exit "${1}"
 }
 log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ${1}" | tee -a $LOG_FILE
+    local message="$1"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $message" | tee -a $LOG_FILE
 }
 
 # Function to install Datadog Agent
@@ -360,23 +360,23 @@ main() {
     exec 1> >(tee -a "$LOG_FILE")
     exec 2> >(tee -a "$LOG_FILE" >&2)
     log "Starting setup..."
+    yum -q update -y >/dev/null 2>&1 || handle_error $? "Yum update failed"
     set_hostname
-    yum update -y
     install_packages unzip
     install_packages "$SSM_AGENT_URL"
     setup_services amazon-ssm-agent
     install_aws_cli
-    install_datadog_agent
-    yum clean all
-    rm -rf /var/cache/yum
-    yum clean metadata packages
-    install_packages realmd openldap-clients krb5-workstation chrony sssd-tools sssd adcli \
-        samba-common samba-common-tools oddjob oddjob-mkhomedir wget telnet strace bind-utils \
-        traceroute net-tools gcc python3 python3-devel python3-pip python3-setuptools postgresql \
-        glibc-headers glibc-devel yum-utils
-    setup_services chronyd
-    setup_docker
-    install_datadog_agent
+    # install_datadog_agent
+    # yum clean all
+    # rm -rf /var/cache/yum
+    # yum clean metadata packages
+    # install_packages realmd openldap-clients krb5-workstation chrony sssd-tools sssd adcli \
+    #     samba-common samba-common-tools oddjob oddjob-mkhomedir wget telnet strace bind-utils \
+    #     traceroute net-tools gcc python3 python3-devel python3-pip python3-setuptools postgresql \
+    #     glibc-headers glibc-devel yum-utils
+    # setup_services chronyd
+    # setup_docker
+    # install_datadog_agent
     log "Setup completed successfully!"
 }
 

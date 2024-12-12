@@ -1,18 +1,20 @@
 
-tf_state_bucket_name: "tf-deployment-state-files-dev"
+tf_state_bucket_name: tf-deployment-state-files-dev
 tf_state_path: "Syc/syc12/dev/wde2/terraform.tfstate"
 
-customer_name: "syc"
-customer_org: "syc12"
-customer_env: "dev"
-app_name: "wde"
-app_version: "1.1.0.0"
-aws_region: "us-east-1"
+customer_name: syc
+customer_org: syc12
+customer_env: dev
+app_name: wde
+app_version: 1.1.0.0
+aws_region: us-east-1
 
-ad_domain: "SYCAMORE.DEV.ORG"
-ad_workgroup: "SYCAMORE"
-ad_credentials_secret_arn: "arn:aws:secretsmanager:us-east-1:472598590798:secret:ADCredentials-HP2Y96"
-datadog_api_key_secret_arn: "arn:aws:secretsmanager:us-east-1:472598590798:secret:datadog-api-key-IAOXSn"
+ad_domain: SYCAMORE.DEV.ORG
+workgroup: SYCAMORE
+ad_credentials_secret: "arn:aws:secretsmanager:us-east-1:472598590798:secret:ADCredentials-HP2Y96"
+datadog_api_key_secret: "arn:aws:secretsmanager:us-east-1:472598590798:secret:datadog-api-key-IAOXSn"
+# Scripts directory will be uploaded to this bucket based at path s3://wde-config-us-east-1/<customer_name>-<customer_org>-<customer_env>-<app_name>-<app_version>/scripts.zip
+config_s3_bucket: wde-config-us-east-1
 
 windows_autoscaling_thresholds:
   scale_out_rdp_users: 5
@@ -62,7 +64,7 @@ server_config:
           protocol: all
           cidr: "0.0.0.0/0"
   windows_server:
-      instance_type: "t3.medium"
+      instance_type: "t3.large"
       ami: "ami-0d0e8b294f5fa3e60"
       instance_volume_size: 50
       asg_min_size: 1

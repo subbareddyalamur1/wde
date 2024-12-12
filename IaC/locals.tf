@@ -12,9 +12,10 @@ locals {
   aws_region = local.inputs["aws_region"]
 
   ad_domain = local.inputs["ad_domain"]
-  ad_workgroup = local.inputs["ad_workgroup"]
-  ad_credentials_secret_arn = local.inputs["ad_credentials_secret_arn"]
-  datadog_api_key_secret_arn = local.inputs["datadog_api_key_secret_arn"]
+  workgroup = local.inputs["workgroup"]
+  ad_credentials_secret = local.inputs["ad_credentials_secret"]
+  datadog_api_key_secret = local.inputs["datadog_api_key_secret"]
+  config_s3_bucket = local.inputs["config_s3_bucket"]
 
   resource_name = replace("${local.customer_name}-${local.customer_org}-${local.customer_env}-${local.app_name}-${local.app_version}", ".", "")
 

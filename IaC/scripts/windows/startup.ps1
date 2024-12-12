@@ -1,19 +1,32 @@
-<powershell>
+param (
+    [Parameter(Mandatory=$true)]
+    [string]$CUSTOMER_NAME,
+    
+    [Parameter(Mandatory=$true)]
+    [string]$CUSTOMER_ORG,
+    
+    [Parameter(Mandatory=$true)]
+    [string]$CUSTOMER_ENV,
+    
+    [Parameter(Mandatory=$true)]
+    [string]$APP_NAME,
+    
+    [Parameter(Mandatory=$true)]
+    [string]$AD_DOMAIN,
+    
+    [Parameter(Mandatory=$true)]
+    [string]$AD_CREDENTIALS_SECRET
+)
+
 # Set execution policy and error preference
 Set-ExecutionPolicy Unrestricted -Force
 $ErrorActionPreference = "Stop"
+Import-Module AWSPowerShell
 
-# Template variables
-$CUSTOMER_NAME = "${customer_name}"
-$CUSTOMER_ORG = "${customer_org}"
-$CUSTOMER_ENV = "${customer_env}"
-$APP_NAME = "${app_name}"
-$AD_DOMAIN = "${domain}"
-$AD_CREDENTAILS_SECRET_ARN = "${ad_credentials_secret_arn}"
-$AD_WORKGROUP = "${ad_workgroup}"
 
-# Initialize logging
-Start-Transcript -Path "C:\Windows\Temp\userdata_log.log" -Append
+# Script-scoped variables
+$Script:hostname = $null
+$Script:ADCredentials = $null 
 
 # Function to write logs
 function Write-Log {
@@ -41,70 +54,66 @@ function Write-Log {
     Write-EventLog -LogName $eventLog -Source $source -EventId 1000 -EntryType $EventType -Message $Message
 }
 
-# Function to install prerequisites
-function Install-Prerequisites {
-    try {
-        Write-Log "Starting installation for customer: $CUSTOMER_NAME, org: $CUSTOMER_ORG, env: $CUSTOMER_ENV"
-        
-        # Create DoNotDelete directory
-        New-Item -ItemType Directory -Force -Path "C:\DoNotDelete" | Out-Null
-
-        # install CloudWatch agent
-        Invoke-WebRequest -Uri https://s3.amazonaws.com/amazoncloudwatch-agent/windows/amd64/latest/amazon-cloudwatch-agent.msi -OutFile C:\amazon-cloudwatch-agent.msi
-        Start-Process -FilePath C:\amazon-cloudwatch-agent.msi -ArgumentList '/quiet' -Wait
-        Write-Log "CloudWatch agent installed successfully"
-
-        # install AWS CLI if not already installed
-        if (-not (Test-Path "C:\Program Files\Amazon\AWSCLIV2\aws.exe")) {
-            Write-Log "Installing AWS CLI..."
-            $installerPath = "C:\AWSCLIV2.msi"
-            Invoke-WebRequest -Uri "https://awscli.amazonaws.com/AWSCLIV2.msi" -OutFile $installerPath
-            Start-Process -FilePath msiexec.exe -Args "/i $installerPath /quiet" -Wait
-            Remove-Item $installerPath
-            Write-Log "AWS CLI installed successfully"
-        }
-
-        #install RSAT-AD-PowerShell if not already installed
-        if (-not (Get-WindowsFeature RSAT-AD-PowerShell)) {
-            Write-Log "Installing RSAT-AD-PowerShell..."
-            Install-WindowsFeature -Name RSAT-AD-PowerShell -IncludeManagementTools
-            Write-Log "RSAT-AD-PowerShell installed successfully"
-        }
-        Write-Log "Prerequisites installed successfully"
-    }
-    catch {
-        Write-Log "Error installing prerequisites: $_" -EventType "Error"
-        throw
-    }
-}
-
 # Function to join AD domain
 function Join-ADDomain {
     param()
     try {
-        if ($AD_DOMAIN) {
-            Write-Log "Attempting to join domain: $AD_DOMAIN"
-            # Get domain join credentials from AWS Secrets Manager
-            $secret = Get-SECSecretValue -SecretId $AD_CREDENTAILS_SECRET_ARN | Select-Object -ExpandProperty SecretString | ConvertFrom-Json
-            $username = $secret.UserId
-            $password = $secret.Password | ConvertTo-SecureString -AsPlainText -Force
-            $credential = New-Object System.Management.Automation.PSCredential($username, $password)
+        Write-Log "Attempting to join domain: $AD_DOMAIN"
+        $username = $Script:ADCredentials.UserId
+        $password = $Script:ADCredentials.Password | ConvertTo-SecureString -AsPlainText -Force
+        $credential = New-Object System.Management.Automation.PSCredential($username, $password)
+        
+        # Check if computer is already domain joined
+        $computerSystem = Get-WmiObject -Class Win32_ComputerSystem
+        if ($computerSystem.PartOfDomain) {
+            $currentDomain = $computerSystem.Domain
+            Write-Log "Computer is currently joined to domain: $currentDomain"
+            Write-Log "Removing computer from current domain..."
             
-            # Check if computer is already domain joined
-            $computerSystem = Get-WmiObject -Class Win32_ComputerSystem
-            if ($computerSystem.PartOfDomain) {
-                $currentDomain = $computerSystem.Domain
-                Write-Log "Computer is currently joined to domain: $currentDomain"
-                Write-Log "Removing computer from current domain..."
-                
-                # Remove from current domain
-                Remove-Computer -UnjoinDomainCredential $credential -Force
-                
-                Write-Log "Successfully removed from domain: $currentDomain"
+            # Remove from current domain
+            Remove-Computer -UnjoinDomainCredential $credential -Force
+            
+            Write-Log "Successfully removed from domain: $currentDomain"
+        }
+        
+        Write-Log "Joining new domain: $AD_DOMAIN"
+        Add-Computer -DomainName $AD_DOMAIN -Credential $credential -NewName $Script:hostname -Force
+        
+        # Validate domain join
+        Write-Log "Validating domain join..."
+        $maxAttempts = 3
+        $attempt = 1
+        $joined = $false
+        
+        while (-not $joined -and $attempt -le $maxAttempts) {
+            try {
+                $computerSystem = Get-WmiObject -Class Win32_ComputerSystem
+                if ($computerSystem.PartOfDomain -and $computerSystem.Domain -eq $AD_DOMAIN) {
+                    Write-Log "Successfully joined domain: $($computerSystem.Domain) with hostname: $Script:hostname"
+                    $joined = $true
+                    
+                    # Test domain connectivity
+                    $dcTest = Test-ComputerSecureChannel -Server $computerSystem.Domain
+                    if (-not $dcTest) {
+                        throw "Domain controller connection test failed"
+                    }
+                    Write-Log "Domain controller connection test successful"
+
+                    # Force group policy update
+                    Write-Log "Updating Group Policy..."
+                    gpupdate /force | Out-Null
+                } else {
+                    throw "Computer is not joined to the expected domain: $AD_DOMAIN"
+                }
+            } catch {
+                if ($attempt -eq $maxAttempts) {
+                    Write-Log "Domain join validation failed after $maxAttempts attempts: $_" -EventType "Error"
+                    throw
+                }
+                Write-Log "Domain join validation attempt $attempt failed: $_. Retrying in 10 seconds..." -EventType "Warning"
+                Start-Sleep -Seconds 10
+                $attempt++
             }
-            
-            Write-Log "Joining new domain: $AD_DOMAIN"
-            Add-Computer -DomainName $AD_DOMAIN -Credential $credential -Force -Restart
         }
     }
     catch {
@@ -117,14 +126,8 @@ function Join-ADDomain {
 function Set-LocalAdminPassword {
     try {
         Write-Log "Setting local administrator password..."
-        
-        # Get admin credentials from AWS Secrets Manager
-        $secret = Get-SECSecretValue -SecretId $AD_CREDENTAILS_SECRET_ARN | Select-Object -ExpandProperty SecretString | ConvertFrom-Json
-        $adminPassword = $secret.Password | ConvertTo-SecureString -AsPlainText -Force
-        
-        # Get local administrator account
+        $adminPassword = $Script:ADCredentials.Password | ConvertTo-SecureString -AsPlainText -Force
         $adminAccount = Get-LocalUser -Name "Administrator"
-        
         # Set password
         $adminAccount | Set-LocalUser -Password $adminPassword -PasswordNeverExpires $true
         Write-Log "Local administrator password updated successfully"
@@ -143,36 +146,41 @@ function Set-LocalAdminPassword {
 
 # Function to set Windows hostname
 function Set-WindowsHostname {
-    param()
     try {
+        Write-Log "Starting hostname configuration..."
+
         # Get IMDSv2 token
-        $token = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token-ttl-seconds" = "21600"} -Method PUT -Uri "http://169.254.169.254/latest/api/token"
-        
+        $token = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token-ttl-seconds" = "21600"} -Method PUT -Uri "http://169.254.169.254/latest/api/token" -TimeoutSec 5
+
         # Get instance ID
-        $instanceId = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token" = $token} -Method GET -Uri "http://169.254.169.254/latest/meta-data/instance-id"  
-        
-        # Extract the last two characters from instance ID
-        $instanceNumber = $instanceId.Substring($instanceId.Length - 2)
-        
-        # Get first letter of environment
-        $envPrefix = $CUSTOMER_ENV.Substring(0,1)
-        
-        # Construct hostname
-        $hostname = "$envPrefix-$APP_NAME-$CUSTOMER_NAME-$instanceNumber".ToLower()
-        
-        # Remove any special characters and ensure hostname meets Windows requirements
-        $hostname = $hostname -replace '[^a-zA-Z0-9-]', ''
-        if ($hostname.Length -gt 15) {
-            $hostname = $hostname.Substring(0, 15)
+        $instanceId = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token" = $token} -Method GET -Uri "http://169.254.169.254/latest/meta-data/instance-id" -TimeoutSec 5
+
+        # Generate hostname
+        $prefix = "$($CUSTOMER_ENV[0])"
+        $suffix = $instanceId.Substring($instanceId.Length - 2)
+        $Script:hostname = "$prefix-$CUSTOMER_NAME-$APP_NAME-$suffix".ToUpper()
+
+        if ($Script:hostname.Length -gt 15) {
+            $Script:hostname = $Script:hostname.Substring(0, 15)
+            Write-Log "Hostname truncated to 15 characters: $Script:hostname" -EventType "Warning"
         }
-        
-        Write-Log "Setting hostname to: $hostname"
-        Rename-Computer -NewName $hostname -Force
-        
-        Write-Log "Hostname set successfully"
-    }
-    catch {
-        Write-Log "Error setting hostname: $_" -EventType "Error"
+
+        # Log current computer name
+        Write-Log "Current computer name: $env:computername"
+        Write-Log "Proposed hostname: $Script:hostname"
+
+        # Set hostname
+        if ($env:computername -ne $Script:hostname) {
+            Write-Log "Setting hostname to: $Script:hostname"
+            Rename-Computer -NewName $Script:hostname -Force -ErrorAction Stop
+            Write-Log "Hostname configuration completed successfully"
+            return $Script:hostname
+        } else {
+            Write-Log "Hostname is already set to: $Script:hostname"
+            return $Script:hostname
+        }
+    } catch {
+        Write-Log "Error during hostname configuration: $_" -EventType "Error"
         throw
     }
 }
@@ -224,14 +232,14 @@ try {
     Write-Log "AWS credentials check result: $credCheck"
 
     Write-Log "Checking CloudWatch permissions..."
-    $permCheck = & "C:\Program Files\Amazon\AWSCLIV2\aws.exe" cloudwatch list-metrics --namespace AWS/EC2 --max-items 1 2>&1
+    $permCheck = aws cloudwatch list-metrics --namespace AWS/EC2 --max-items 1 2>&1
     if ($LASTEXITCODE -ne 0) {
         throw "CloudWatch permission check failed: $permCheck"
     }
     Write-Log "CloudWatch permission check passed"
 
     Write-Log "Getting IMDSv2 token..."
-    $token = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token-ttl-seconds" = "21600"} -Method PUT -Uri "http://169.254.169.254/latest/api/token"
+    $token = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token-ttl-seconds" = "300"} -Method PUT -Uri "http://169.254.169.254/latest/api/token"
     
     Write-Log "Getting instance ID..."
     $instanceId = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token" = $token} -Method GET -Uri "http://169.254.169.254/latest/meta-data/instance-id"
@@ -295,6 +303,10 @@ try {
 '@
 
     # write script to file
+    $logDir = "C:\DoNotDelete"
+    if (-not (Test-Path $logDir)) {
+        New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+    }
     Set-Content -Path "C:\DoNotDelete\ActiveUsersWatcher.ps1" -Value $scriptContent -Encoding UTF8
     Write-Log "Created metrics script at C:\DoNotDelete\ActiveUserWatcher.ps1"
 }
@@ -306,8 +318,15 @@ function Register-MetricsTask {
         $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 5)
         $settings = New-ScheduledTaskSettingsSet -Hidden
         $principal = New-ScheduledTaskPrincipal -UserID "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
-        Register-ScheduledTask -Action $action -Trigger $trigger -Settings $settings -TaskName "ActiveUsersWatcher" -Description "Monitor active user sessions" -Principal $principal
-        Write-Log "Created scheduled task 'ActiveUsersWatcher'"
+        
+        # Check if the scheduled task already exists
+        $taskExists = Get-ScheduledTask | Where-Object { $_.TaskName -eq "ActiveUsersWatcher" }
+        if (-not $taskExists) {
+            Register-ScheduledTask -Action $action -Trigger $trigger -Settings $settings -TaskName "ActiveUsersWatcher" -Description "Monitor active user sessions" -Principal $principal
+            Write-Log "Scheduled task 'ActiveUsersWatcher' created successfully."
+        } else {
+            Write-Log "Scheduled task 'ActiveUsersWatcher' already exists. Skipping creation."
+        }
     }
     catch {
         Write-Log "Error creating scheduled task: $_" -EventType "Error"
@@ -315,11 +334,8 @@ function Register-MetricsTask {
     }
 }
 
-# Function to create domain cleanup script
+# Function to create domain unjoin script
 function UnJoin-ADDomainTask {
-    param(
-        [string]$AD_CREDENTIALS_SECRET_ARN
-    )
     try {
         $scriptPath = "C:\Windows\System32\GroupPolicy\Machine\Scripts\Shutdown\Shutdown-UnJoin.ps1"
         $scriptDirectory = Split-Path -Path $scriptPath -Parent
@@ -375,7 +391,7 @@ try {
     
     # Get credentials from AWS Secrets Manager
     Import-Module AWSPowerShell
-    `$secret = Get-SECSecretValue -SecretId "$AD_CREDENTIALS_SECRET_ARN" | 
+    `$secret = Get-SECSecretValue -SecretId "$AD_CREDENTIALS_SECRET" | 
         Select-Object -ExpandProperty SecretString | 
         ConvertFrom-Json
         
@@ -403,10 +419,7 @@ try {
         Set-ItemProperty -Path $registryPath -Name "Script" -Value "Shutdown-UnJoin.ps1"
         Set-ItemProperty -Path $registryPath -Name "Parameters" -Value ""
         Set-ItemProperty -Path $registryPath -Name "IsPowershell" -Value 1
-
-        # Force group policy update
-        gpupdate /force | Out-Null
-        
+       
         Write-Log "UnJoin-ADDomain script added to shutdown scripts successfully"
     } catch {
         Write-Log "Error creating UnJoin-ADDomain script: $_" -EventType "Error"
@@ -416,29 +429,73 @@ try {
 
 function Reboot-Computer {
     try {
-        Write-Log "Rebooting computer..."
+        Write-Log "Scheduling computer restart in 60 seconds..."
+        Start-Sleep -Seconds 60
         Restart-Computer -Force
+        Write-Log "Restart command issued successfully"
     } catch {
-        Write-Log "Error rebooting computer: $_" -EventType "Error"
+        Write-Log "Error restarting computer: $_" -EventType "Error"
+        throw
+    }
+}
+
+function Prevent-Subsequent-Userdata-Execution {
+    # Set registry key to prevent userdata execution on subsequent reboots
+    Write-Log "Setting EC2Launch registry key to prevent future userdata execution..."
+    if (-not (Test-Path "HKLM:\SOFTWARE\Amazon\EC2Launch")) {
+        New-Item -Path "HKLM:\SOFTWARE\Amazon\EC2Launch" -Force | Out-Null
+    }
+    Set-ItemProperty -Path "HKLM:\SOFTWARE\Amazon\EC2Launch" -Name "ExecuteUserData" -Value 1 -Type DWord
+    Write-Log "EC2Launch registry key set successfully"
+}
+
+function Get-ADCredentials {
+    try {
+        Write-Log "Retrieving credentials from Secrets Manager..."
+        $Script:ADCredentials = & "C:\Program Files\Amazon\AWSCLIV2\aws.exe" secretsmanager get-secret-value `
+            --secret-id $AD_CREDENTIALS_SECRET `
+            --query SecretString `
+            --output text | ConvertFrom-Json
+        Write-Log "Credentials retrieved successfully"
+    } catch {
+        Write-Log "Failed to retrieve credentials: $_" -EventType "Error"
         throw
     }
 }
 
 # Main execution block
 try {
-    Install-Prerequisites
-    Set-WindowsHostname
+    # Check if script has already run
+    $markerFile = "C:\DoNotDelete\startup_complete.marker"
+    if (Test-Path $markerFile) {
+        Write-Log "Startup script has already run. Exiting..."
+        exit 0
+    }
+    Write-Log "Starting user data execution..."
+    Write-Log "Customer Name: $CUSTOMER_NAME"
+    Write-Log "Customer Organization: $CUSTOMER_ORG"
+    Write-Log "Environment: $CUSTOMER_ENV"
+    Write-Log "Application Name: $APP_NAME"
+    Write-Log "Active Directory Domain: $AD_DOMAIN"
+    Write-Log "AD Credentials Secret: $AD_CREDENTIALS_SECRET"
+
+    Get-ADCredentials
     Set-LocalAdminPassword
+    Set-WindowsHostname
     New-MetricsScript
     Register-MetricsTask
-    UnJoin-ADDomainTask -AD_CREDENTIALS_SECRET_ARN $AD_CREDENTAILS_SECRET_ARN
+    UnJoin-ADDomainTask
     Join-ADDomain
+    Prevent-Subsequent-Userdata-Execution
+    
+    # Create marker file to indicate successful execution
+    New-Item -Path $markerFile -ItemType File -Force | Out-Null
+    Write-Log "Created startup completion marker file"
+
     Reboot-Computer
+
+    Write-Log "User data execution completed successfully"
 } catch {
     Write-Log "Error occurred during user data execution: $_" -EventType "Error"
     throw
-} finally {
-    Stop-Transcript
 }
-</powershell>
-<persist>true</persist>

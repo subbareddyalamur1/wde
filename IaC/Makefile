@@ -25,16 +25,12 @@ all: plan apply
 # Copy inputs.yaml from deployment location
 .PHONY: copy-inputs
 copy-inputs:
-	@if [ ! -f inputs.yaml ]; then \
-		echo "Copying inputs.yaml from $(INPUT_FILE)..."; \
-		if [ ! -f "$(INPUT_FILE)" ]; then \
-			echo "Error: Input file not found at $(INPUT_FILE)"; \
-			exit 1; \
-		fi; \
-		cp $(INPUT_FILE) .; \
-	else \
-		echo "inputs.yaml already exists. Skipping copy..."; \
+	@echo "Copying inputs.yaml from $(INPUT_FILE)..."
+	@if [ ! -f "$(INPUT_FILE)" ]; then \
+		echo "Error: Input file not found at $(INPUT_FILE)"; \
+		exit 1; \
 	fi
+	@cp $(INPUT_FILE) .
 
 # Create backend.tf
 .PHONY: create-backend
@@ -65,25 +61,25 @@ init: copy-inputs create-backend
 
 # Plan changes
 .PHONY: plan
-plan: copy-inputs
+plan: 
 	@echo "Planning Terraform changes..."
 	terraform plan
 
 # Apply changes
 .PHONY: apply
-apply: copy-inputs
+apply: 
 	@echo "Applying Terraform changes..."
 	terraform apply -auto-approve
 
 # Plan Terraform destroy
 .PHONY: plan-destroy
-plan-destroy: copy-inputs
+plan-destroy: 
 	@echo "Planning Terraform destroy..."
 	terraform plan -destroy
 
 # Destroy infrastructure
 .PHONY: destroy
-destroy: copy-inputs
+destroy: 
 	@echo "Destroying Terraform resources..."
 	terraform destroy -auto-approve
 
@@ -96,6 +92,7 @@ clean:
 	rm -rf .terraform
 	rm -f .terraform.lock.hcl
 	rm -f terraform.tfstate*
+	rm -f *.zip
 
 # Help target
 .PHONY: help

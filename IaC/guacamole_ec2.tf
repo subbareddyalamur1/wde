@@ -1,6 +1,6 @@
 # Fetch datadog api key
 data "aws_secretsmanager_secret_version" "datadog_api_key" {
-  secret_id = local.datadog_api_key_secret_arn
+  secret_id = local.datadog_api_key_secret
 }
 
 locals {
@@ -60,9 +60,9 @@ resource "aws_iam_role" "guacamole_role" {
   })
 
   # Add lifecycle to prevent recreation
-  lifecycle {
-    prevent_destroy = true
-  }
+  # lifecycle {
+  #   prevent_destroy = true
+  # }
 }
 
 # Attach SSM Managed Instance Core policy
@@ -106,7 +106,10 @@ data "aws_iam_policy_document" "guacamole_policy" {
       "cloudwatch:ListMetrics",
       "autoscaling:CompleteLifecycleAction",
       "secretsmanager:GetSecretValue",
-      "ec2:DescribeTags"
+      "ec2:DescribeTags",
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:ListBucket"
     ]
     resources = ["*"]
     effect    = "Allow"
@@ -144,7 +147,6 @@ resource "aws_launch_template" "guacamole" {
     customer_name = local.customer_name
     customer_org  = local.customer_org
     customer_env  = local.customer_env
-    ad_workgroup  = local.ad_workgroup
     ad_domain     = local.ad_domain
     datadog_api_key = local.datadog_api_key
     app_name = local.app_name
@@ -156,21 +158,21 @@ resource "aws_launch_template" "guacamole" {
 }
 
 # Guacamole Instances
-# resource "aws_instance" "guacamole" {
-#   for_each = toset(local.guac_availability_zones)
+resource "aws_instance" "guacamole" {
+  for_each = toset(local.guac_availability_zones)
 
-#   launch_template {
-#     id      = aws_launch_template.guacamole.id
-#     version = "$Latest"
-#   }
+  launch_template {
+    id      = aws_launch_template.guacamole.id
+    version = "$Latest"
+  }
 
-#   # Use index of the AZ to get corresponding subnet ID
-#   subnet_id = local.guac_private_subnet_ids[index(local.guac_availability_zones, each.key)]
+  # Use index of the AZ to get corresponding subnet ID
+  subnet_id = local.guac_private_subnet_ids[index(local.guac_availability_zones, each.key)]
 
-#   vpc_security_group_ids = [aws_security_group.guacamole_sg.id]
+  vpc_security_group_ids = [aws_security_group.guacamole_sg.id]
 
-#   tags = merge(local.tags, {
-#     Name = "${local.resource_name}-guacamole-${substr(each.key, -1, 1)}"
-#     AvailabilityZone = each.key
-#   })
-# }
+  tags = merge(local.tags, {
+    Name = "${local.resource_name}-guacamole-${substr(each.key, -1, 1)}"
+    AvailabilityZone = each.key
+  })
+}
