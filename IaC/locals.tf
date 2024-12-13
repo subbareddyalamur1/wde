@@ -21,6 +21,7 @@ locals {
 
   # VPC Configuration
   vpc_id = local.inputs["vpc_config"]["vpc_id"]
+  vpc_cidr = local.inputs["vpc_config"]["vpc_cidr"]
 
   # Get all private and public subnet IDs from vpc_config
   private_subnet_ids = [

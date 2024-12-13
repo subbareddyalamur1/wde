@@ -18,10 +18,10 @@ resource "aws_security_group" "rds_sg" {
 
   # Allow access from Windows instances
   ingress {
-    from_port       = 5432
-    to_port         = 5432
-    protocol        = "tcp"
-    security_groups = [aws_security_group.windows_sg.id]
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
+    cidr_blocks = [local.vpc_cidr]
   }
 
   # Allow access from my IP for development
@@ -30,6 +30,13 @@ resource "aws_security_group" "rds_sg" {
     to_port     = 5432
     protocol    = "tcp"
     cidr_blocks = [yamldecode(file("${path.module}/inputs.yaml")).my_ip]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   tags = merge(local.tags, {

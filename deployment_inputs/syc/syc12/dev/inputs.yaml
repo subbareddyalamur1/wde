@@ -26,6 +26,7 @@ windows_autoscaling_thresholds:
 
 vpc_config:
   vpc_id: "vpc-0b7257119a1b264a4"
+  vpc_cidr: "10.30.0.0/16"
   availability_zones:
     us-east-1a:
       private_subnet_id: subnet-010b34e74203d4678 # Core-Subnet-1a-SCE-4.2.2.2-Syc-syc12-staging-Private
