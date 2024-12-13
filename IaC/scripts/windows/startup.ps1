@@ -157,8 +157,8 @@ function Set-WindowsHostname {
 
         # Generate hostname
         $prefix = "$($CUSTOMER_ENV[0])"
-        $suffix = $instanceId.Substring($instanceId.Length - 2)
-        $Script:hostname = "$prefix-$CUSTOMER_NAME-$APP_NAME-$suffix".ToUpper()
+        $suffix = $instanceId.Substring($instanceId.Length - 3)
+        $Script:hostname = "$prefix-$CUSTOMER_ORG-$APP_NAME-$suffix".ToUpper()
 
         if ($Script:hostname.Length -gt 15) {
             $Script:hostname = $Script:hostname.Substring(0, 15)

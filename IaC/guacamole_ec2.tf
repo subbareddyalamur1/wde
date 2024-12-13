@@ -8,34 +8,34 @@ locals {
 }
 
 resource "aws_security_group" "guacamole_sg" {
-  name = "${local.resource_name}-guacamole-sg"
+  name   = "${local.resource_name}-guacamole-sg"
   vpc_id = local.vpc_id
-  
+
   tags = merge(local.tags, {
     Name = "${local.resource_name}-guacamole-sg"
   })
 }
 
 resource "aws_security_group_rule" "guacamole_ingress" {
-  for_each = { for idx, rule in local.guac_sg_rules.ingress : idx => rule }
+  for_each          = { for idx, rule in local.guac_sg_rules.ingress : idx => rule }
   type              = "ingress"
   from_port         = each.value.port
   to_port           = each.value.port
   protocol          = each.value.protocol
   cidr_blocks       = [each.value.cidr]
   security_group_id = aws_security_group.guacamole_sg.id
-  depends_on = [ aws_security_group.guacamole_sg ]
+  depends_on        = [aws_security_group.guacamole_sg]
 }
 
 resource "aws_security_group_rule" "guacamole_egress" {
-  for_each = { for idx, rule in local.guac_sg_rules.egress : idx => rule }
+  for_each          = { for idx, rule in local.guac_sg_rules.egress : idx => rule }
   type              = "egress"
   from_port         = each.value.port
   to_port           = each.value.port
   protocol          = each.value.protocol
   cidr_blocks       = [each.value.cidr]
   security_group_id = aws_security_group.guacamole_sg.id
-  depends_on = [ aws_security_group.guacamole_sg ]
+  depends_on        = [aws_security_group.guacamole_sg]
 }
 
 # IAM Role for Guacamole Instances
@@ -128,7 +128,7 @@ resource "aws_launch_template" "guacamole" {
   name          = "${local.resource_name}-guacamole-lt"
   image_id      = local.guac_ami
   instance_type = local.guac_instance_type
-  key_name = aws_key_pair.windows_key_pair.key_name
+  key_name      = aws_key_pair.windows_key_pair.key_name
 
   iam_instance_profile {
     name = aws_iam_instance_profile.guacamole_profile.name
@@ -144,12 +144,12 @@ resource "aws_launch_template" "guacamole" {
   }
 
   user_data = base64encode(templatefile("${path.module}/scripts/guacamole/startup.sh", {
-    customer_name = local.customer_name
-    customer_org  = local.customer_org
-    customer_env  = local.customer_env
-    ad_domain     = local.ad_domain
+    customer_name   = local.customer_name
+    customer_org    = local.customer_org
+    customer_env    = local.customer_env
+    ad_domain       = local.ad_domain
     datadog_api_key = local.datadog_api_key
-    app_name = local.app_name
+    app_name        = local.app_name
   }))
 
   tags = merge(local.tags, {
@@ -172,7 +172,7 @@ resource "aws_instance" "guacamole" {
   vpc_security_group_ids = [aws_security_group.guacamole_sg.id]
 
   tags = merge(local.tags, {
-    Name = "${local.resource_name}-guacamole-${substr(each.key, -1, 1)}"
+    Name             = "${local.resource_name}-guacamole-${substr(each.key, -1, 1)}"
     AvailabilityZone = each.key
   })
 }

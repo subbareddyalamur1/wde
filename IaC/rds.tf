@@ -1,6 +1,6 @@
 locals {
   rds_monitoring_role_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/rds-monitoring-role"
-  rds_creds = jsondecode(data.aws_secretsmanager_secret_version.rds_credentials.secret_string)
+  rds_creds               = jsondecode(data.aws_secretsmanager_secret_version.rds_credentials.secret_string)
 }
 
 data "aws_secretsmanager_secret_version" "rds_credentials" {
@@ -47,13 +47,13 @@ resource "aws_db_subnet_group" "aurora" {
 }
 
 resource "aws_rds_cluster" "aurora_cluster" {
-  cluster_identifier     = "${local.resource_name}-psql"
-  engine                = local.rds_config.engine
-  engine_version        = local.rds_config.engine_version
-  availability_zones    = local.rds_config.availability_zones
-  database_name         = local.rds_config.database_name
-  master_username       = local.rds_creds.db_username
-  master_password       = local.rds_creds.db_password
+  cluster_identifier = "${local.resource_name}-psql"
+  engine             = local.rds_config.engine
+  engine_version     = local.rds_config.engine_version
+  availability_zones = local.rds_config.availability_zones
+  database_name      = local.rds_config.database_name
+  master_username    = local.rds_creds.db_username
+  master_password    = local.rds_creds.db_password
 
   serverlessv2_scaling_configuration {
     min_capacity = local.rds_config.acu_min
@@ -61,16 +61,16 @@ resource "aws_rds_cluster" "aurora_cluster" {
   }
 
   # performance
-  performance_insights_enabled = true
+  performance_insights_enabled    = true
   performance_insights_kms_key_id = aws_kms_key.kms_key.arn
 
   iam_database_authentication_enabled = false
-  storage_encrypted = true
-  kms_key_id = aws_kms_key.kms_key.arn
+  storage_encrypted                   = true
+  kms_key_id                          = aws_kms_key.kms_key.arn
 
   vpc_security_group_ids = [aws_security_group.rds_sg.id]
   db_subnet_group_name   = aws_db_subnet_group.aurora.id
-  port = 5432
+  port                   = 5432
 
   # deletion
   deletion_protection             = true
@@ -89,27 +89,27 @@ resource "aws_rds_cluster" "aurora_cluster" {
 
   lifecycle {
     ignore_changes = [
-      availability_zones,  # Ignore changes to availability zones
-      allocated_storage,   # Ignore allocated storage changes
-      apply_immediately    # Ignore immediate apply flag
+      availability_zones, # Ignore changes to availability zones
+      allocated_storage,  # Ignore allocated storage changes
+      apply_immediately   # Ignore immediate apply flag
     ]
   }
 }
 
 resource "aws_rds_cluster_instance" "aurora_instances" {
-  count               = length(local.rds_config.availability_zones)
-  identifier          = "${local.resource_name}-cluster-${count.index + 1}"
-  cluster_identifier  = aws_rds_cluster.aurora_cluster.id
-  instance_class      = "db.serverless"  # Serverless v2 instance class
-  engine              = aws_rds_cluster.aurora_cluster.engine
-  engine_version      = aws_rds_cluster.aurora_cluster.engine_version
+  count              = length(local.rds_config.availability_zones)
+  identifier         = "${local.resource_name}-cluster-${count.index + 1}"
+  cluster_identifier = aws_rds_cluster.aurora_cluster.id
+  instance_class     = "db.serverless" # Serverless v2 instance class
+  engine             = aws_rds_cluster.aurora_cluster.engine
+  engine_version     = aws_rds_cluster.aurora_cluster.engine_version
 
   monitoring_interval = 60
   monitoring_role_arn = local.rds_monitoring_role_arn
 
   auto_minor_version_upgrade = false
-  
-  publicly_accessible = false
+
+  publicly_accessible   = false
   copy_tags_to_snapshot = true
 
   tags = merge(local.tags, {
@@ -123,11 +123,11 @@ resource "aws_secretsmanager_secret_version" "rds_connection_details" {
   secret_string = jsonencode(merge(
     jsondecode(data.aws_secretsmanager_secret_version.rds_credentials.secret_string),
     {
-      db_endpoint = aws_rds_cluster.aurora_cluster.endpoint
-      db_port = aws_rds_cluster.aurora_cluster.port
+      db_endpoint   = aws_rds_cluster.aurora_cluster.endpoint
+      db_port       = aws_rds_cluster.aurora_cluster.port
       db_identifier = aws_rds_cluster.aurora_cluster.cluster_identifier
-      dbname = local.rds_config.database_name
-      engine = local.rds_config.engine
+      dbname        = local.rds_config.database_name
+      engine        = local.rds_config.engine
     }
   ))
 
@@ -173,7 +173,7 @@ resource "null_resource" "create_guacamole_schema" {
 resource "null_resource" "create_guacamole_admin_user" {
   triggers = {
     cluster_endpoint = aws_rds_cluster.aurora_cluster.endpoint
-}
+  }
 
   provisioner "local-exec" {
     command = <<-EOT

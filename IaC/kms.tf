@@ -76,8 +76,8 @@ resource "aws_kms_key" "kms_key" {
   description             = "KMS key for Windows instances"
   deletion_window_in_days = 7
   enable_key_rotation     = true
-  policy                 = data.aws_iam_policy_document.kms_policy.json
-  
+  policy                  = data.aws_iam_policy_document.kms_policy.json
+
   tags = merge(local.tags, {
     Name = "${local.resource_name}-key"
   })

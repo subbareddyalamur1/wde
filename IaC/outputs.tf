@@ -46,16 +46,27 @@ output "lambda_role_arn" {
 
 output "windows_nlb_dns_name" {
   description = "DNS name of the Windows instances NLB"
-  value       = aws_lb.windows_nlb.dns_name  
+  value       = aws_lb.windows_nlb.dns_name
 }
 
 output "rds_endpoint" {
   description = "Endpoint of the RDS cluster"
-  value       = aws_rds_cluster.aurora_cluster.endpoint 
+  value       = aws_rds_cluster.aurora_cluster.endpoint
 }
 
 output "rds_identifier" {
   description = "Identifier of the RDS cluster"
-  value       = aws_rds_cluster.aurora_cluster.cluster_identifier 
+  value       = aws_rds_cluster.aurora_cluster.cluster_identifier
 }
 
+output "guacamole_servers" {
+  value = values(aws_instance.guacamole)[*].id
+}
+
+output "guacamole_iam_role" {
+  value = aws_iam_role.guacamole_role.arn
+}
+
+output "guacamole_alb_dns_name" {
+  value = aws_lb.guacamole_alb.dns_name
+}

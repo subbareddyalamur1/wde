@@ -57,15 +57,15 @@ data "archive_file" "lambda_zip" {
 
 # Lambda function
 resource "aws_lambda_function" "check_sessions" {
-  depends_on = [ aws_autoscaling_group.windows ]
+  depends_on       = [aws_autoscaling_group.windows]
   filename         = data.archive_file.lambda_zip.output_path
   function_name    = "${local.resource_name}-check-sessions"
-  role            = aws_iam_role.lambda_role.arn
-  handler         = "check_active_sessions.lambda_handler"
+  role             = aws_iam_role.lambda_role.arn
+  handler          = "check_active_sessions.lambda_handler"
   source_code_hash = data.archive_file.lambda_zip.output_base64sha256
-  runtime         = "python3.9"
-  timeout         = 300
-  memory_size     = 128
+  runtime          = "python3.9"
+  timeout          = 300
+  memory_size      = 128
 
   environment {
     variables = {

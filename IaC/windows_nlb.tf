@@ -30,7 +30,7 @@ resource "aws_lb_target_group" "rdp" {
   health_check {
     enabled             = true
     protocol            = "TCP"
-    port               = 3389
+    port                = 3389
     healthy_threshold   = 3
     unhealthy_threshold = 3
     interval            = 30
@@ -60,7 +60,7 @@ resource "aws_lb_listener" "rdp" {
 
 # Target Group Attachment
 resource "aws_autoscaling_attachment" "rdp" {
-  depends_on             = [ aws_autoscaling_group.windows ]
+  depends_on             = [aws_autoscaling_group.windows]
   autoscaling_group_name = aws_autoscaling_group.windows.name
   lb_target_group_arn    = aws_lb_target_group.rdp.arn
 }
