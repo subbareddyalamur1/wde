@@ -138,6 +138,7 @@ resource "aws_launch_template" "windows" {
       customer_env          = local.customer_env
       app_name              = local.app_name
       domain                = local.ad_domain
+      ad_ou_path            = local.ad_ou_path
       workgroup             = local.workgroup
       ad_credentials_secret = local.ad_credentials_secret
       s3_bucket             = aws_s3_object.scripts_zip.bucket
@@ -345,7 +346,7 @@ resource "aws_cloudwatch_metric_alarm" "memory_high_alarm" {
   evaluation_periods  = "2"
   metric_name         = "MemoryUtilization"
   namespace           = "System/Windows"
-  period              = "120"
+  period              = "600"
   statistic           = "Average"
   threshold           = local.asg_thresholds.scale_out_memory_usage
 
@@ -364,7 +365,7 @@ resource "aws_cloudwatch_metric_alarm" "memory_low_alarm" {
   evaluation_periods  = "2"
   metric_name         = "MemoryUtilization"
   namespace           = "System/Windows"
-  period              = "120"
+  period              = "900"
   statistic           = "Average"
   threshold           = local.asg_thresholds.scale_in_memory_usage
 
@@ -416,7 +417,7 @@ resource "aws_cloudwatch_metric_alarm" "cpu_high_alarm" {
   evaluation_periods  = "2"
   metric_name         = "CPUUtilization"
   namespace           = "AWS/EC2"
-  period              = "120"
+  period              = "600"
   statistic           = "Average"
   threshold           = local.asg_thresholds.scale_out_cpu_usage
 
@@ -435,7 +436,7 @@ resource "aws_cloudwatch_metric_alarm" "cpu_low_alarm" {
   evaluation_periods  = "2"
   metric_name         = "CPUUtilization"
   namespace           = "AWS/EC2"
-  period              = "120"
+  period              = "900"
   statistic           = "Average"
   threshold           = "20"
 

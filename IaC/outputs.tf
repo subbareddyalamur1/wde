@@ -70,3 +70,7 @@ output "guacamole_iam_role" {
 output "guacamole_alb_dns_name" {
   value = aws_lb.guacamole_alb.dns_name
 }
+
+output "aws_fsx_windows_file_system_dns_name" {
+  value = aws_fsx_windows_file_system.windows_fsx.dns_name
+}

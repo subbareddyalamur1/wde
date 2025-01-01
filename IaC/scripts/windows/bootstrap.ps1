@@ -8,6 +8,7 @@ $CUSTOMER_ORG = "${customer_org}"
 $CUSTOMER_ENV = "${customer_env}"
 $APP_NAME = "${app_name}"
 $AD_DOMAIN = "${domain}"
+$AD_OU_PATH = "${ou_path}"
 $WORKGROUP = "${workgroup}"
 $AD_CREDENTIALS_SECRET = "${ad_credentials_secret}"
 $S3_BUCKET = "${s3_bucket}"
@@ -79,6 +80,7 @@ try {
         -CUSTOMER_ENV $CUSTOMER_ENV `
         -APP_NAME $APP_NAME `
         -AD_DOMAIN $AD_DOMAIN `
+        -AD_OU_PATH $AD_OU_PATH `
         -AD_CREDENTIALS_SECRET $AD_CREDENTIALS_SECRET
 
     Write-Log "Startup script execution completed"

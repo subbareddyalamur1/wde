@@ -13,7 +13,10 @@ param (
     
     [Parameter(Mandatory=$true)]
     [string]$AD_DOMAIN,
-    
+
+    [Parameter(Mandatory=$true)]
+    [string]$AD_OU_PATH,
+
     [Parameter(Mandatory=$true)]
     [string]$AD_CREDENTIALS_SECRET
 )
@@ -77,7 +80,7 @@ function Join-ADDomain {
         }
         
         Write-Log "Joining new domain: $AD_DOMAIN"
-        Add-Computer -DomainName $AD_DOMAIN -Credential $credential -NewName $Script:hostname -Force
+        Add-Computer -DomainName $AD_DOMAIN -OUPath $AD_OU_PATH -Credential $credential -NewName $Script:hostname -Force
         
         # Validate domain join
         Write-Log "Validating domain join..."
@@ -463,6 +466,59 @@ function Get-ADCredentials {
     }
 }
 
+function Mount-FSxDrive {
+    try {
+        Write-Log "Starting FSx drive mount process..."
+        
+        # Get FSx file system DNS name using AWS CLI and tags
+        $fsxFilter = "Name=tag:Name,Values=$CUSTOMER_NAME-$CUSTOMER_ORG-$CUSTOMER_ENV-$APP_NAME* " + `
+                    "Name=tag:CustomerName,Values=$CUSTOMER_NAME " + `
+                    "Name=tag:CustomerOrg,Values=$CUSTOMER_ORG " + `
+                    "Name=tag:CustomerEnv,Values=$CUSTOMER_ENV " + `
+                    "Name=tag:AppName,Values=$APP_NAME"
+        
+        Write-Log "Querying FSx file system with filter: $fsxFilter"
+        
+        $fsxInfo = aws fsx describe-file-systems --filters $fsxFilter | ConvertFrom-Json
+        
+        if (-not $fsxInfo -or -not $fsxInfo.FileSystems -or $fsxInfo.FileSystems.Count -eq 0) {
+            throw "No FSx file system found matching the specified tags"
+        }
+        
+        $fsxDnsName = $fsxInfo.FileSystems[0].DNSName
+        Write-Log "Found FSx DNS name: $fsxDnsName"
+        
+        # Check if P: drive already exists
+        if (Test-Path "P:") {
+            Write-Log "P: drive already exists. Removing existing mapping..."
+            Remove-PSDrive -Name "P" -Force -ErrorAction SilentlyContinue
+            Net Use P: /DELETE /Y
+        }
+        
+        # Mount FSx share as P: drive
+        Write-Log "Mounting FSx share as P: drive..."
+        $mountCommand = "Net Use P: \\$fsxDnsName\share /PERSISTENT:YES"
+        $result = Invoke-Expression $mountCommand
+        
+        if ($LASTEXITCODE -eq 0) {
+            Write-Log "Successfully mounted FSx share as P: drive"
+        } else {
+            throw "Failed to mount FSx share. Net Use command returned: $result"
+        }
+        
+        # Verify the mount
+        if (Test-Path "P:") {
+            Write-Log "Verified P: drive is accessible"
+        } else {
+            throw "P: drive is not accessible after mounting"
+        }
+    }
+    catch {
+        Write-Log "Error mounting FSx drive: $_" -EventType "Error"
+        throw
+    }
+}
+
 # Main execution block
 try {
     # Check if script has already run
@@ -486,6 +542,7 @@ try {
     Register-MetricsTask
     UnJoin-ADDomainTask
     Join-ADDomain
+    Mount-FSxDrive
     Prevent-Subsequent-Userdata-Execution
     
     # Create marker file to indicate successful execution

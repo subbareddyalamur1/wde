@@ -12,10 +12,15 @@ locals {
   aws_region    = local.inputs["aws_region"]
 
   ad_domain              = local.inputs["ad_domain"]
+  ad_ou_path             = local.inputs["ad_ou_path"]
+  ad_domain_ips          = local.inputs["ad_domain_ips"]
   workgroup              = local.inputs["workgroup"]
-  ad_credentials_secret  = local.inputs["ad_credentials_secret"]
+  ad_credentials_secret = local.inputs["ad_credentials_secret"]
   datadog_api_key_secret = local.inputs["datadog_api_key_secret"]
   config_s3_bucket       = local.inputs["config_s3_bucket"]
+
+  fsx_size = local.inputs["fsx_config"]["storage_capacity"]
+  fsx_throughput = local.inputs["fsx_config"]["throughput"]
 
   resource_name = replace("${local.customer_name}-${local.customer_org}-${local.customer_env}-${local.app_name}-${local.app_version}", ".", "")
 
